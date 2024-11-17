@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - tunnel_network
+
+  server:
+    build:
+      context: .
+      dockerfile: packages/server/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=your-jwt-secret-key
+    depends_on:
+      - redis
+    networks:
+      - tunnel_network
+    volumes:
+      - ./packages/server/src:/app/packages/server/src
+      - ./packages/common/src:/app/packages/common/src
+
+  client:
+    build:
+      context: .
+      dockerfile: packages/client/Dockerfile
+    environment:
+      - TUNNEL_SERVER_URL=ws://server:3000
+      - LOCAL_PORT=8080
+      - TUNNEL_ID=development-tunnel
+      - ENCRYPTION_KEY=your-32-character-encryption-key
+    depends_on:
+      - server
+    networks:
+      - tunnel_network
+    volumes:
+      - ./packages/client/src:/app/packages/client/src
+      - ./packages/common/src:/app/packages/common/src
+
+networks:
+  tunnel_network:
+    driver: bridge
+
+volumes:
+  redis_data:
