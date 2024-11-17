@@ -1,100 +1,133 @@
-import WebSocket from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 import { WSMessage, WSMessageType } from '@tunnel/common';
 import { logger } from '../utils/logger';
-import { getTunnelConnection, setTunnelConnection, removeTunnelConnection } from '../services/redis';
-import { ExtendedWebSocket } from './types';
+import { MessageProcessor } from '../utils/message-processor';
+import { IncomingMessage } from 'http';
 
-export function setupWebSocketServer(wss: WebSocket.Server) {
-  const heartbeatInterval = setInterval(() => {
-    wss.clients.forEach((wsClient: WebSocket) => {
-      const ws = wsClient as ExtendedWebSocket;
-      if (!ws.isAlive) {
-        logger.info(`Client ${ws.id} is inactive, terminating connection`);
-        return ws.terminate();
-      }
+// Use a constant key that matches the client's default
+const ENCRYPTION_KEY = 'your-32-character-encryption-key';
 
-      ws.isAlive = false;
-      ws.send(JSON.stringify({
-        type: WSMessageType.HEARTBEAT,
-        tunnelId: ws.tunnelId,
-        timestamp: Date.now(),
-        payload: null
-      }));
-    });
-  }, 30000);
+// Store both client and tunnel mappings
+const clients = new Map<string, WebSocket>();
+const tunnels = new Map<string, WebSocket>();
 
-  const handleConnection = (ws: WebSocket) => {
-    const extendedWs = ws as ExtendedWebSocket;
-    extendedWs.id = Math.random().toString(36).substring(7);
-    extendedWs.isAlive = true;
+const messageProcessor = new MessageProcessor(
+  process.env.ENCRYPTION_KEY || ENCRYPTION_KEY
+);
 
-    logger.info(`New client connected: ${extendedWs.id}`);
+logger.debug('WebSocket server using encryption key:', process.env.ENCRYPTION_KEY || ENCRYPTION_KEY);
 
-    extendedWs.on('message', async (data: string) => {
+export function setupWebSocketServer(wss: WebSocketServer) {
+  wss.on('connection', async (ws) => {
+    const clientId = generateClientId();
+    clients.set(clientId, ws);
+    logger.info(`New client connected: ${clientId}`);
+
+    ws.on('message', async (data) => {
       try {
-        const message: WSMessage = JSON.parse(data);
+        const message = await messageProcessor.processIncomingMessage(data.toString());
 
-        switch (message.type) {
-          case WSMessageType.CONNECT:
-            await handleConnect(extendedWs, message);
-            break;
-          case WSMessageType.DISCONNECT:
-            await handleDisconnect(extendedWs, message);
-            break;
-          case WSMessageType.REQUEST:
-            await handleRequest(extendedWs, message);
-            break;
-          case WSMessageType.HEARTBEAT:
-            extendedWs.isAlive = true;
-            break;
-          default:
-            logger.warn(`Unknown message type: ${message.type}`);
+        // Store tunnel mapping when client sends CONNECT message
+        if (message.type === WSMessageType.CONNECT) {
+          tunnels.set(message.tunnelId, ws);
+          logger.info(`Tunnel registered: ${message.tunnelId} (Client: ${clientId})`);
         }
+
+        await handleMessage(ws, message, clientId);
       } catch (error) {
         logger.error('Error processing message:', error);
-        extendedWs.send(JSON.stringify({
-          type: WSMessageType.ERROR,
-          tunnelId: extendedWs.tunnelId,
-          timestamp: Date.now(),
-          payload: { error: 'Invalid message format' }
-        }));
       }
     });
 
-    extendedWs.on('close', async () => {
-      logger.info(`Client disconnected: ${extendedWs.id}`);
-      if (extendedWs.tunnelId) {
-        await removeTunnelConnection(extendedWs.tunnelId);
+    ws.on('close', () => {
+      // Clean up both mappings
+      clients.delete(clientId);
+      for (const [tunnelId, socket] of tunnels.entries()) {
+        if (socket === ws) {
+          tunnels.delete(tunnelId);
+          logger.info(`Tunnel unregistered: ${tunnelId}`);
+        }
       }
+      logger.info(`Client disconnected: ${clientId}`);
     });
-  };
-
-  wss.on('connection', handleConnection as (ws: WebSocket) => void);
-
-  wss.on('close', () => {
-    clearInterval(heartbeatInterval);
   });
 }
 
-async function handleConnect(ws: ExtendedWebSocket, message: WSMessage) {
-  ws.tunnelId = message.tunnelId;
-  await setTunnelConnection(message.tunnelId, ws.id);
-  logger.info(`Tunnel connected: ${message.tunnelId}`);
+async function handleMessage(ws: WebSocket, message: WSMessage, clientId: string) {
+  try {
+    switch (message.type) {
+      case WSMessageType.CONNECT:
+        // Handle connection
+        break;
+      case WSMessageType.HEARTBEAT:
+        const response = {
+          type: WSMessageType.HEARTBEAT,
+          tunnelId: message.tunnelId,
+          payload: null,
+          timestamp: Date.now(),
+        };
+        const processed = await messageProcessor.processOutgoingMessage(response);
+        ws.send(processed);
+        break;
+      default:
+        logger.warn(`Unknown message type: ${message.type}`);
+    }
+  } catch (error) {
+    logger.error('Error handling message:', error);
+  }
 }
 
-async function handleDisconnect(ws: ExtendedWebSocket, message: WSMessage) {
-  await removeTunnelConnection(message.tunnelId);
-  ws.tunnelId = undefined;
-  logger.info(`Tunnel disconnected: ${message.tunnelId}`);
+function generateClientId(): string {
+  return Math.random().toString(36).substring(2, 8);
 }
 
-async function handleRequest(ws: ExtendedWebSocket, message: WSMessage) {
-  const targetTunnelId = await getTunnelConnection(message.tunnelId);
-  if (!targetTunnelId) {
-    logger.warn(`No connection found for tunnel: ${message.tunnelId}`);
+export function setupHttpProxy(req: IncomingMessage, res: any, tunnelId: string) {
+  const ws = findClientByTunnelId(tunnelId);
+  if (!ws) {
+    res.writeHead(404).end(`Tunnel ${tunnelId} not found`);
     return;
   }
 
-  // Forward the request to the appropriate client
-  ws.send(JSON.stringify(message));
+  const proxyRequest = {
+    method: req.method,
+    url: req.url,
+    headers: req.headers,
+  };
+
+  const message: WSMessage = {
+    type: WSMessageType.REQUEST,
+    tunnelId,
+    payload: proxyRequest,
+    timestamp: Date.now()
+  };
+
+  // Process the message before sending
+  messageProcessor.processOutgoingMessage(message)
+    .then(processed => {
+      ws.send(processed);
+
+      // Set up response handling
+      ws.once('message', async (data) => {
+        try {
+          const responseStr = data instanceof Buffer ? data.toString() : data.toString();
+          const processedResponse = await messageProcessor.processIncomingMessage(responseStr);
+          const response = processedResponse.payload;
+
+          res.writeHead(response.statusCode, response.headers);
+          res.end(response.body);
+        } catch (error) {
+          logger.error('Error handling proxy response:', error);
+          res.writeHead(500).end('Internal Server Error');
+        }
+      });
+    })
+    .catch(error => {
+      logger.error('Error processing proxy request:', error);
+      res.writeHead(500).end('Internal Server Error');
+    });
+}
+
+function findClientByTunnelId(tunnelId: string): WebSocket | undefined {
+  // Use the tunnel mapping instead of client mapping
+  return tunnels.get(tunnelId);
 }

@@ -170,6 +170,21 @@ The service consists of three main components:
 5. Client proxies to local service
 6. Response follows reverse path
 
+### Message Security
+Messages between client and server are secured using:
+- AES encryption with a shared key
+- Compression for messages larger than 1KB
+- Base64 encoding for compressed messages
+
+Environment variables required for security:
+```env
+# Server
+ENCRYPTION_KEY=your-32-character-encryption-key
+
+# Client
+ENCRYPTION_KEY=your-32-character-encryption-key  # Must match server
+```
+
 ## Logging
 
 ### Server Logs

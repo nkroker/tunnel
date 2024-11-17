@@ -24,4 +24,9 @@ COPY packages/client/tsconfig.json ./packages/client/
 # Build packages
 RUN pnpm -r build
 
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD pnpm --filter @tunnel/client exec node -e "process.exit(0)"
+
+# Keep the container running
 CMD ["pnpm", "--filter", "@tunnel/client", "start"]

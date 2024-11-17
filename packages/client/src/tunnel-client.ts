@@ -1,12 +1,25 @@
 import WebSocket from 'ws';
-import httpProxy from 'http-proxy';
+import { IncomingMessage, ServerResponse, IncomingHttpHeaders } from 'http';
 import { WSMessage, WSMessageType } from '@tunnel/common';
 import { logger } from './utils/logger';
 import { MessageProcessor } from './utils/message-processor';
+import * as http from 'http';
+
+interface ProxyRequest {
+  method: string;
+  url: string;
+  headers: IncomingHttpHeaders;
+  body?: any;
+}
+
+interface ProxyResponse {
+  statusCode: number;
+  headers: IncomingHttpHeaders;
+  body: any;
+}
 
 export class TunnelClient {
   private ws: WebSocket;
-  private proxy: httpProxy;
   private messageProcessor: MessageProcessor;
   private reconnectAttempts = 0;
   private heartbeatInterval?: NodeJS.Timeout;
@@ -22,9 +35,7 @@ export class TunnelClient {
     }
   ) {
     this.messageProcessor = new MessageProcessor(config.encryptionKey);
-    this.proxy = httpProxy.createProxyServer({});
     this.ws = this.createWebSocketConnection();
-    this.setupProxyErrorHandling();
   }
 
   private createWebSocketConnection(): WebSocket {
@@ -42,9 +53,17 @@ export class TunnelClient {
       });
     });
 
-    ws.on('message', async (data: string) => {
+    ws.on('message', async (data) => {
       try {
-        const message = await this.messageProcessor.processIncomingMessage(data);
+        const messageStr = data instanceof Buffer ? data.toString() : data.toString();
+        logger.debug('Received raw message:', messageStr);
+
+        if (!messageStr) {
+          logger.warn('Received empty message');
+          return;
+        }
+
+        const message = await this.messageProcessor.processIncomingMessage(messageStr);
         await this.handleMessage(message);
       } catch (error) {
         logger.error('Error processing message:', error);
@@ -64,32 +83,71 @@ export class TunnelClient {
     return ws;
   }
 
-  private setupProxyErrorHandling() {
-    this.proxy.on('error', (err: Error) => {
-      logger.error('Proxy error:', err);
+  private async handleProxyRequest(request: ProxyRequest): Promise<ProxyResponse> {
+    return new Promise((resolve, reject) => {
+      const proxyReq = http.request({
+        hostname: 'localhost',
+        port: this.config.localPort,
+        path: request.url || '/',
+        method: request.method,
+        headers: request.headers
+      }, (proxyRes) => {
+        let body = '';
+        proxyRes.on('data', chunk => {
+          body += chunk;
+        });
+
+        proxyRes.on('end', () => {
+          resolve({
+            statusCode: proxyRes.statusCode || 500,
+            headers: proxyRes.headers,
+            body: body
+          });
+        });
+      });
+
+      proxyReq.on('error', (error) => {
+        logger.error('Proxy request error:', error);
+        reject(error);
+      });
+
+      if (request.body) {
+        proxyReq.write(request.body);
+      }
+      proxyReq.end();
     });
   }
 
   private async handleMessage(message: WSMessage) {
-    switch (message.type) {
-      case WSMessageType.REQUEST:
-        await this.handleRequest(message);
-        break;
-      case WSMessageType.HEARTBEAT:
-        await this.sendMessage({
-          type: WSMessageType.HEARTBEAT,
-          tunnelId: this.config.tunnelId,
-          payload: null,
-          timestamp: Date.now(),
-        });
-        break;
-      default:
-        logger.warn(`Unknown message type: ${message.type}`);
-    }
-  }
+    try {
+      switch (message.type) {
+        case WSMessageType.REQUEST:
+          const request = message.payload as ProxyRequest;
+          logger.info(`Proxying request: ${request.method} ${request.url}`);
 
-  private async handleRequest(message: WSMessage) {
-    // Implement request handling
+          const response = await this.handleProxyRequest(request);
+
+          const responseMessage: WSMessage = {
+            type: WSMessageType.RESPONSE,
+            tunnelId: this.config.tunnelId,
+            payload: response,
+            timestamp: Date.now()
+          };
+
+          const processed = await this.messageProcessor.processOutgoingMessage(responseMessage);
+          this.ws.send(processed);
+          break;
+
+        case WSMessageType.HEARTBEAT:
+          // Handle heartbeat
+          break;
+
+        default:
+          logger.warn(`Unknown message type: ${message.type}`);
+      }
+    } catch (error) {
+      logger.error('Error handling message:', error);
+    }
   }
 
   private startHeartbeat() {
@@ -138,7 +196,6 @@ export class TunnelClient {
   public async stop() {
     this.stopHeartbeat();
     this.ws.close();
-    this.proxy.close();
     logger.info('Tunnel client stopped');
   }
 }

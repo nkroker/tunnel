@@ -21,6 +21,7 @@ services:
       - PORT=3000
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=your-jwt-secret-key
+      - ENCRYPTION_KEY=your-32-character-encryption-key
     depends_on:
       - redis
     networks:
@@ -36,7 +37,7 @@ services:
     environment:
       - TUNNEL_SERVER_URL=ws://server:3000
       - LOCAL_PORT=8080
-      - TUNNEL_ID=development-tunnel
+      - TUNNEL_ID=123e4567-e89b-12d3-a456-426614174000
       - ENCRYPTION_KEY=your-32-character-encryption-key
     depends_on:
       - server

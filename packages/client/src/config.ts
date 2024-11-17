@@ -5,7 +5,7 @@ import path from 'path';
 const ConfigSchema = z.object({
   serverUrl: z.string().url(),
   localPort: z.number().min(1).max(65535),
-  tunnelId: z.string().uuid(),
+  tunnelId: z.string(),
   encryptionKey: z.string().min(32),
   maxReconnectAttempts: z.number().min(1).default(5),
   heartbeatInterval: z.number().min(1000).default(30000),

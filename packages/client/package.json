@@ -4,38 +4,39 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "tunnel": "./dist/cli/index.js"
+    "tunnel": "./bin/tunnel"
   },
   "scripts": {
     "build": "tsc",
-    "dev": "ts-node-dev --respawn src/index.ts",
+    "dev": "ts-node-dev --respawn --require dotenv/config src/index.ts",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
     "test": "jest",
-    "cli": "ts-node src/cli/index.ts"
+    "cli": "ts-node src/cli/index.ts",
+    "postinstall": "chmod +x ./bin/tunnel"
   },
   "dependencies": {
     "@tunnel/common": "workspace:*",
     "commander": "^11.1.0",
     "crypto-js": "^4.2.0",
     "dotenv": "^16.4.5",
-    "http-proxy": "^1.18.1",
-    "tail": "^2.2.6",
     "winston": "^3.11.0",
     "ws": "^8.16.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/crypto-js": "^4.2.2",
-    "@types/http-proxy": "^1.17.15",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.24",
     "@types/ws": "^8.5.10",
     "@typescript-eslint/eslint-plugin": "^7.1.0",
     "@typescript-eslint/parser": "^7.1.0",
+    "dotenv-cli": "^7.4.2",
     "eslint": "^9.0.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.1.2",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
     "typescript": "^5.3.3"
   }
 }
