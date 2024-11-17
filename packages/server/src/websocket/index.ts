@@ -2,16 +2,12 @@ import WebSocket from 'ws';
 import { WSMessage, WSMessageType } from '@tunnel/common';
 import { logger } from '../utils/logger';
 import { getTunnelConnection, setTunnelConnection, removeTunnelConnection } from '../services/redis';
-
-interface ExtendedWebSocket extends WebSocket {
-  id: string;
-  tunnelId?: string;
-  isAlive: boolean;
-}
+import { ExtendedWebSocket } from './types';
 
 export function setupWebSocketServer(wss: WebSocket.Server) {
   const heartbeatInterval = setInterval(() => {
-    wss.clients.forEach((ws: ExtendedWebSocket) => {
+    wss.clients.forEach((wsClient: WebSocket) => {
+      const ws = wsClient as ExtendedWebSocket;
       if (!ws.isAlive) {
         logger.info(`Client ${ws.id} is inactive, terminating connection`);
         return ws.terminate();
@@ -27,50 +23,53 @@ export function setupWebSocketServer(wss: WebSocket.Server) {
     });
   }, 30000);
 
-  wss.on('connection', (ws: ExtendedWebSocket) => {
-    ws.id = Math.random().toString(36).substring(7);
-    ws.isAlive = true;
+  const handleConnection = (ws: WebSocket) => {
+    const extendedWs = ws as ExtendedWebSocket;
+    extendedWs.id = Math.random().toString(36).substring(7);
+    extendedWs.isAlive = true;
 
-    logger.info(`New client connected: ${ws.id}`);
+    logger.info(`New client connected: ${extendedWs.id}`);
 
-    ws.on('message', async (data: string) => {
+    extendedWs.on('message', async (data: string) => {
       try {
         const message: WSMessage = JSON.parse(data);
 
         switch (message.type) {
           case WSMessageType.CONNECT:
-            await handleConnect(ws, message);
+            await handleConnect(extendedWs, message);
             break;
           case WSMessageType.DISCONNECT:
-            await handleDisconnect(ws, message);
+            await handleDisconnect(extendedWs, message);
             break;
           case WSMessageType.REQUEST:
-            await handleRequest(ws, message);
+            await handleRequest(extendedWs, message);
             break;
           case WSMessageType.HEARTBEAT:
-            ws.isAlive = true;
+            extendedWs.isAlive = true;
             break;
           default:
             logger.warn(`Unknown message type: ${message.type}`);
         }
       } catch (error) {
         logger.error('Error processing message:', error);
-        ws.send(JSON.stringify({
+        extendedWs.send(JSON.stringify({
           type: WSMessageType.ERROR,
-          tunnelId: ws.tunnelId,
+          tunnelId: extendedWs.tunnelId,
           timestamp: Date.now(),
           payload: { error: 'Invalid message format' }
         }));
       }
     });
 
-    ws.on('close', async () => {
-      logger.info(`Client disconnected: ${ws.id}`);
-      if (ws.tunnelId) {
-        await removeTunnelConnection(ws.tunnelId);
+    extendedWs.on('close', async () => {
+      logger.info(`Client disconnected: ${extendedWs.id}`);
+      if (extendedWs.tunnelId) {
+        await removeTunnelConnection(extendedWs.tunnelId);
       }
     });
-  });
+  };
+
+  wss.on('connection', handleConnection as (ws: WebSocket) => void);
 
   wss.on('close', () => {
     clearInterval(heartbeatInterval);

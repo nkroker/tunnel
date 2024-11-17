@@ -65,7 +65,7 @@ export class TunnelClient {
   }
 
   private setupProxyErrorHandling() {
-    this.proxy.on('error', (err) => {
+    this.proxy.on('error', (err: Error) => {
       logger.error('Proxy error:', err);
     });
   }

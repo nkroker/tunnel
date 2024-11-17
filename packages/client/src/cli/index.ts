@@ -4,6 +4,8 @@ import { loadConfig } from '../config';
 import { logger } from '../utils/logger';
 import { promises as fs } from 'fs';
 import path from 'path';
+import crypto from 'crypto';
+import { Config, CliConfig } from '../config';
 
 const program = new Command();
 
@@ -70,15 +72,16 @@ program
   .action(async (options) => {
     try {
       const configPath = path.join(options.dir, '.tunnel.config.json');
-      const config = {
+      const config: CliConfig = {
         serverUrl: 'ws://localhost:3000',
         localPort: 3000,
-        tunnelId: crypto.randomUUID(),
+        tunnelId: crypto.randomBytes(16).toString('hex'),
         encryptionKey: crypto.randomBytes(32).toString('hex'),
         maxReconnectAttempts: 5,
         heartbeatInterval: 30000,
         compressionThreshold: 1024,
-        requestTimeout: 30000
+        requestTimeout: 30000,
+        authToken: process.env.AUTH_TOKEN
       };
 
       await fs.writeFile(configPath, JSON.stringify(config, null, 2));
