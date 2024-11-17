@@ -6,18 +6,22 @@ node_modules
 dist
 build
 
+# Logs
+*.log
+logs
+
 # Environment variables
 .env
 .env.*
 !.env.example
 
-# Logs
-*.log
-npm-debug.log*
-
 # IDE
 .vscode
 .idea
 
-# OS
+# Testing
+coverage
+
+# Misc
 .DS_Store
+*.pem
