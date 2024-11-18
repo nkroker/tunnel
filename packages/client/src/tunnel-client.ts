@@ -4,19 +4,7 @@ import { WSMessage, WSMessageType } from '@tunnel/common';
 import { logger } from './utils/logger';
 import { MessageProcessor } from './utils/message-processor';
 import * as http from 'http';
-
-interface ProxyRequest {
-  method: string;
-  url: string;
-  headers: IncomingHttpHeaders;
-  body?: any;
-}
-
-interface ProxyResponse {
-  statusCode: number;
-  headers: IncomingHttpHeaders;
-  body: any;
-}
+import { ProxyRequest, ProxyResponse } from './websocket/types';
 
 export class TunnelClient {
   private ws: WebSocket;
@@ -85,13 +73,24 @@ export class TunnelClient {
 
   private async handleProxyRequest(request: ProxyRequest): Promise<ProxyResponse> {
     return new Promise((resolve, reject) => {
+      const pathRegex = new RegExp(`^/tunnel/${this.config.tunnelId}`);
+      const strippedUrl = request.url?.replace(pathRegex, '') || '/';
+
+      logger.info('Original URL:', request.url);
+      logger.info('Tunnel ID:', this.config.tunnelId);
+      logger.info('Stripped URL:', strippedUrl);
+
+      debugger
+
       const proxyReq = http.request({
         hostname: 'localhost',
         port: this.config.localPort,
-        path: request.url || '/',
+        path: strippedUrl,
         method: request.method,
         headers: request.headers
       }, (proxyRes) => {
+        logger.debug('Local server responded with status:', proxyRes.statusCode);
+
         let body = '';
         proxyRes.on('data', chunk => {
           body += chunk;
@@ -108,6 +107,12 @@ export class TunnelClient {
 
       proxyReq.on('error', (error) => {
         logger.error('Proxy request error:', error);
+        logger.error('Failed request details:', {
+          originalUrl: request.url,
+          strippedUrl,
+          method: request.method,
+          port: this.config.localPort
+        });
         reject(error);
       });
 
@@ -123,9 +128,18 @@ export class TunnelClient {
       switch (message.type) {
         case WSMessageType.REQUEST:
           const request = message.payload as ProxyRequest;
-          logger.info(`Proxying request: ${request.method} ${request.url}`);
+          logger.info(`Received request:`, {
+            method: request.method,
+            url: request.url,
+            headers: request.headers
+          });
 
           const response = await this.handleProxyRequest(request);
+
+          logger.info(`Sending response:`, {
+            statusCode: response.statusCode,
+            headers: response.headers
+          });
 
           const responseMessage: WSMessage = {
             type: WSMessageType.RESPONSE,
@@ -147,6 +161,9 @@ export class TunnelClient {
       }
     } catch (error) {
       logger.error('Error handling message:', error);
+      if (error instanceof Error) {
+        logger.error('Error details:', error.stack);
+      }
     }
   }
 
