@@ -1,36 +1,34 @@
-import { WSMessage } from '@tunnel/common';
 import CryptoJS from 'crypto-js';
 import { logger } from './logger';
 
 export class MessageProcessor {
-  constructor(private encryptionKey: string) {}
-
-  async processOutgoingMessage(message: WSMessage): Promise<string> {
-    try {
-      const messageStr = JSON.stringify(message);
-
-      // Encrypt using CryptoJS
-      const encrypted = CryptoJS.AES.encrypt(messageStr, this.encryptionKey).toString();
-
-      return encrypted;
-    } catch (error) {
-      throw new Error(`Failed to process outgoing message: ${error}`);
+  constructor(private encryptionKey: string) {
+    if (!encryptionKey || encryptionKey.length < 32) {
+      throw new Error('Encryption key must be at least 32 characters long');
     }
   }
 
-  async processIncomingMessage(data: string): Promise<WSMessage> {
-    try {
-      // Decrypt using CryptoJS
-      const bytes = CryptoJS.AES.decrypt(data, this.encryptionKey);
-      const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+  async processOutgoingMessage(message: any): Promise<string> {
+    const messageStr = JSON.stringify(message);
+    logger.debug('Processing outgoing message:', {
+      messageLength: messageStr.length,
+      keyLength: this.encryptionKey.length
+    });
+    return CryptoJS.AES.encrypt(messageStr, this.encryptionKey).toString();
+  }
 
-      if (!decrypted) {
-        throw new Error('Decryption resulted in empty string');
-      }
+  async processIncomingMessage(encryptedMessage: string): Promise<any> {
+    logger.debug('Processing incoming message:', {
+      encryptedLength: encryptedMessage.length,
+      keyLength: this.encryptionKey.length
+    });
+    const decrypted = CryptoJS.AES.decrypt(encryptedMessage, this.encryptionKey);
+    const messageStr = decrypted.toString(CryptoJS.enc.Utf8);
 
-      return JSON.parse(decrypted);
-    } catch (error) {
-      throw new Error(`Failed to process incoming message: ${error}`);
+    if (!messageStr) {
+      throw new Error('Decryption resulted in empty string');
     }
+
+    return JSON.parse(messageStr);
   }
 }

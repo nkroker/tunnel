@@ -73,14 +73,8 @@ export class TunnelClient {
 
   private async handleProxyRequest(request: ProxyRequest): Promise<ProxyResponse> {
     return new Promise((resolve, reject) => {
-      const pathRegex = new RegExp(`^/tunnel/${this.config.tunnelId}`);
-      const strippedUrl = request.url?.replace(pathRegex, '') || '/';
-
-      logger.info('Original URL:', request.url);
-      logger.info('Tunnel ID:', this.config.tunnelId);
-      logger.info('Stripped URL:', strippedUrl);
-
-      debugger
+      let url = request.url;
+      const strippedUrl = url.replace(`/${this.config.tunnelId}`, '') || '/';
 
       const proxyReq = http.request({
         hostname: 'localhost',

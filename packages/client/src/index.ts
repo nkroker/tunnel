@@ -1,34 +1,45 @@
 import { TunnelClient } from './tunnel-client';
-import { loadConfig } from './config';
 import { logger } from './utils/logger';
+import crypto from 'crypto';
 
 async function main() {
   try {
-    const config = loadConfig();
-    const client = new TunnelClient(config);
+    // Generate a unique tunnel ID if not provided
+    const tunnelId = process.env.TUNNEL_ID || crypto.randomBytes(8).toString('hex');
 
+    const config = {
+      serverUrl: process.env.TUNNEL_SERVER_URL || 'ws://localhost:3000',
+      localPort: parseInt(process.env.LOCAL_PORT || '8080', 10),
+      tunnelId: tunnelId,
+      encryptionKey: process.env.ENCRYPTION_KEY || 'your-32-character-encryption-key',
+      maxReconnectAttempts: parseInt(process.env.MAX_RECONNECT_ATTEMPTS || '5', 10),
+      heartbeatInterval: parseInt(process.env.HEARTBEAT_INTERVAL || '30000', 10)
+    };
+
+    const client = new TunnelClient(config);
     await client.start();
 
-    // Handle graceful shutdown
-    process.on('SIGINT', async () => {
-      logger.info('Shutting down client...');
-      await client.stop();
-      process.exit(0);
-    });
+    // Calculate and display the public URL
+    const serverHost = new URL(config.serverUrl.replace('ws://', 'http://')).host;
+    const publicUrl = `http://${serverHost}/tunnel/${tunnelId}`;
 
-    process.on('SIGTERM', async () => {
-      logger.info('Shutting down client...');
+    logger.info('Tunnel started successfully');
+    logger.info(`Forwarding ${publicUrl} -> localhost:${config.localPort}`);
+    logger.info('Press Ctrl+C to stop');
+
+    process.on('SIGINT', async () => {
+      logger.info('Shutting down tunnel...');
       await client.stop();
       process.exit(0);
     });
 
   } catch (error) {
-    logger.error('Failed to start client:', error);
+    logger.error('Failed to start tunnel:', error);
     process.exit(1);
   }
 }
 
-main().catch((error) => {
+main().catch(error => {
   logger.error('Unhandled error:', error);
   process.exit(1);
 });

@@ -14,6 +14,6 @@ export interface ProxyRequest {
 
 export interface ProxyResponse {
   statusCode: number;
-  headers: Record<string, string>;
+  headers: Record<string, string | string[] | undefined>;
   body: any;
 }

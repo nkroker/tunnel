@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "ts-node-dev --respawn --require dotenv/config src/index.ts",
+    "dev": "ts-node-dev --inspect --respawn --require dotenv/config src/index.ts",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
     "test": "jest",
@@ -20,6 +20,7 @@
     "commander": "^11.1.0",
     "crypto-js": "^4.2.0",
     "dotenv": "^16.4.5",
+    "node-monkey": "^1.1.5",
     "winston": "^3.11.0",
     "ws": "^8.16.0",
     "zod": "^3.22.4"

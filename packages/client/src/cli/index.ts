@@ -3,7 +3,7 @@ import { TunnelClient } from '../tunnel-client';
 import { logger } from '../utils/logger';
 import crypto from 'crypto';
 
-const DEFAULT_ENCRYPTION_KEY = 'your-32-character-encryption-key';
+const DEFAULT_ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'your-32-character-encryption-key';
 
 const program = new Command();
 
