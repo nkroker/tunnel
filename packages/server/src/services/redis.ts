@@ -1,25 +1,41 @@
 import { createClient, RedisClientType } from 'redis';
+import { logger } from '../utils/logger';
 
-let redisClient: RedisClientType;
+let client: RedisClientType;
 
-export async function setupRedis() {
-  redisClient = createClient({
-    url: process.env.REDIS_URL
-  }) as RedisClientType;
+export async function setupRedis(): Promise<void> {
+  try {
+    client = createClient({
+      url: process.env.REDIS_URL || 'redis://localhost:6379'
+    });
 
-  redisClient.on('error', (err) => console.error('Redis Client Error', err));
-  await redisClient.connect();
-  return redisClient;
+    client.on('error', (err: Error) => {
+      logger.error('Redis Client Error:', err);
+    });
+
+    await client.connect();
+    logger.info('Redis connected successfully');
+  } catch (error) {
+    logger.error('Failed to connect to Redis:', error);
+    throw error;
+  }
+}
+
+export function getRedisClient(): RedisClientType {
+  if (!client) {
+    throw new Error('Redis client not initialized');
+  }
+  return client;
 }
 
 export async function getTunnelConnection(tunnelId: string): Promise<string | null> {
-  return redisClient.get(`tunnel:${tunnelId}`);
+  return client.get(`tunnel:${tunnelId}`);
 }
 
 export async function setTunnelConnection(tunnelId: string, clientId: string): Promise<void> {
-  await redisClient.set(`tunnel:${tunnelId}`, clientId);
+  await client.set(`tunnel:${tunnelId}`, clientId);
 }
 
 export async function removeTunnelConnection(tunnelId: string): Promise<void> {
-  await redisClient.del(`tunnel:${tunnelId}`);
+  await client.del(`tunnel:${tunnelId}`);
 }

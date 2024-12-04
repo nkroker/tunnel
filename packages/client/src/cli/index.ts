@@ -20,7 +20,7 @@ program
   .action(async (port, options) => {
     try {
       // Generate a unique tunnel ID
-      const tunnelId = crypto.randomBytes(8).toString('hex');
+      const tunnelId = crypto.randomBytes(4).toString('hex');
 
       const config = {
         serverUrl: options.url,
@@ -34,9 +34,10 @@ program
       const client = new TunnelClient(config);
       await client.start();
 
-      // Calculate and display the public URL
+      // Calculate and display the public URL using subdomain
       const serverHost = new URL(options.url.replace('ws://', 'http://')).host;
-      const publicUrl = `http://${serverHost}/tunnel/${tunnelId}`;
+      const baseHost = serverHost.split(':')[0]; // Remove port if present
+      const publicUrl = `http://${tunnelId}.${baseHost}:3000`;
 
       logger.info('Tunnel started successfully');
       logger.info(`Forwarding ${publicUrl} -> localhost:${port}`);

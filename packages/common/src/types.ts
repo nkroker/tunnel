@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { IncomingHttpHeaders } from 'http';
 
 // Core types with Zod validation
 export const TunnelConfigSchema = z.object({
@@ -37,11 +38,35 @@ export enum WSMessageType {
   HEARTBEAT = 'heartbeat',
 }
 
-export const WSMessageSchema = z.object({
-  type: z.nativeEnum(WSMessageType),
-  tunnelId: z.string().uuid(),
-  payload: z.any(),
-  timestamp: z.number(),
-});
+export interface WSMessage {
+  type: WSMessageType;
+  tunnelId: string;
+  payload: ProxyRequest | ProxyResponse | any;
+  timestamp: number;
+}
 
-export type WSMessage = z.infer<typeof WSMessageSchema>;
+export interface TunnelOptions {
+  hostname?: string;  // Base hostname for the tunnel (default: localtest.me)
+  subdomain?: string; // Custom subdomain (optional)
+}
+
+// Base ProxyRequest interface
+export interface ProxyRequest {
+  method: string;
+  url: string;
+  headers: IncomingHttpHeaders;
+  body?: string;
+  requestId: string;
+}
+
+// Extended interface for internal use with retry count
+export interface ProxyRequestWithRetry extends ProxyRequest {
+  retryCount: number;
+}
+
+export interface ProxyResponse {
+  statusCode: number;
+  headers: IncomingHttpHeaders;
+  body: string;
+  requestId?: string;
+}
